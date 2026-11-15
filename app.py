@@ -4,6 +4,7 @@ import streamlit as st
 from pdf_processor import extract_pdf_text
 from chunking import create_chunks
 from embeddings import generate_embeddings
+from vector_db import store_chunks, search_chunks, collection
 
 
 # Page configuration
@@ -202,4 +203,124 @@ if uploaded_file is not None:
 
                 st.caption(
                     f"Characters: {len(chunk['chunk_text'])}"
+                )
+    if st.button("Process PDF and Save to Database"):
+
+        with st.spinner("Extracting PDF text..."):
+
+            pages = extract_pdf_text(
+                uploaded_file.getvalue(),
+                uploaded_file.name
+            )
+
+        if not pages:
+
+            st.warning("No selectable text found.")
+
+            st.stop()
+
+        st.success(
+            f"Extracted {len(pages)} pages."
+        )
+
+
+        # Create chunks
+
+        chunks = create_chunks(
+            pages,
+            chunk_size=chunk_size,
+            overlap=overlap
+        )
+
+        st.success(
+            f"Generated {len(chunks)} chunks."
+        )
+
+
+        # Save to ChromaDB
+
+        with st.spinner("Generating embeddings and saving..."):
+
+            saved_count = store_chunks(chunks)
+
+        st.success(
+            f"Successfully saved {saved_count} chunks to ChromaDB!"
+        )
+
+
+# --------------------------------
+# DATABASE INFORMATION
+# --------------------------------
+
+st.divider()
+
+st.subheader("Vector Database Information")
+
+total_chunks = collection.count()
+
+st.metric(
+    "Total Stored Chunks",
+    total_chunks
+)
+
+
+# --------------------------------
+# QUESTION SEARCH
+# --------------------------------
+
+st.divider()
+
+st.subheader("Search Your PDF")
+
+question = st.text_input(
+    "Enter your question",
+    placeholder="Example: What are the maintenance charges?"
+)
+
+
+if st.button("Search Relevant Chunks"):
+
+    if not question.strip():
+
+        st.warning("Please enter a question.")
+
+    elif collection.count() == 0:
+
+        st.warning("Please upload and process a PDF first.")
+
+    else:
+
+        with st.spinner("Searching ChromaDB..."):
+
+            results = search_chunks(
+                question,
+                top_k=5
+            )
+
+        st.success("Search completed!")
+
+        documents = results["documents"][0]
+        metadatas = results["metadatas"][0]
+        distances = results["distances"][0]
+
+        st.subheader("Retrieved Results")
+
+        for i, (document, metadata, distance) in enumerate(
+            zip(documents, metadatas, distances)
+        ):
+
+            with st.expander(
+                f"Result {i + 1} - "
+                f"{metadata['filename']} - "
+                f"Page {metadata['page_number']}"
+            ):
+
+                st.write(document)
+
+                st.caption(
+                    f"Cosine distance: {distance:.4f}"
+                )
+
+                st.caption(
+                    f"Chunk index: {metadata['chunk_index']}"
                 )
