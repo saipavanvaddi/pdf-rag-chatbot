@@ -5,6 +5,7 @@ from pdf_processor import extract_pdf_text
 from chunking import create_chunks
 from embeddings import generate_embeddings
 from vector_db import store_chunks, search_chunks, collection
+from groq_client import generate_answer
 
 
 # Page configuration
@@ -324,3 +325,89 @@ if st.button("Search Relevant Chunks"):
                 st.caption(
                     f"Chunk index: {metadata['chunk_index']}"
                 )
+if st.button("Ask AI"):
+
+    if not question.strip():
+
+        st.warning("Please enter a question.")
+
+    elif collection.count() == 0:
+
+        st.warning("Upload and process a PDF first.")
+
+    else:
+
+        # STEP 1: Retrieve relevant chunks
+
+        with st.spinner("Searching PDF content..."):
+
+            results = search_chunks(
+                question,
+                top_k=5
+            )
+
+
+        documents = results["documents"][0]
+
+        if not documents:
+
+            st.warning("No relevant content found.")
+
+            st.stop()
+
+
+        # STEP 2: Send retrieved chunks to Groq
+
+        try:
+
+            with st.spinner("Groq is generating an answer..."):
+
+                answer = generate_answer(
+                    question,
+                    results
+                )
+
+
+            # STEP 3: Display answer
+
+            st.subheader("🤖 AI Answer")
+
+            st.markdown(answer)
+
+
+            # STEP 4: Display source pages
+
+            st.subheader("📄 Retrieved PDF Sources")
+
+            metadatas = results["metadatas"][0]
+
+            sources = sorted({
+                (
+                    metadata["filename"],
+                    metadata["page_number"]
+                )
+                for metadata in metadatas
+            })
+
+            for filename, page_number in sources:
+
+                st.write(
+                    f"- {filename} - Page {page_number}"
+                )
+
+
+            # STEP 5: Display retrieved context
+
+            with st.expander("View Retrieved PDF Context"):
+
+                for index, document in enumerate(documents):
+
+                    st.markdown(f"**Chunk {index + 1}**")
+
+                    st.write(document)
+
+        except Exception as error:
+
+            st.error(
+                f"Groq API error: {error}"
+            )
